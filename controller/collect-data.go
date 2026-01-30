@@ -91,6 +91,7 @@ func (r *ResultDetails) GetExperimentMetricsFromResult(chaosResult *litmuschaosv
 		setAppNs(engine.Spec.Appinfo.Appns).
 		setAppKind(engine.Spec.Appinfo.AppKind).
 		setTotalDuration().
+		setRecoveryTime().
 		setVerdictCount(verdict, chaosResult).
 		setFaultName(engine.Spec.Experiments[0].Name).
 		setResultData()
@@ -248,6 +249,20 @@ func (resultDetails *ChaosResultDetails) setChaosInjectTime(events corev1.EventL
 // setTotalDuration sets total chaos duration for the experiment run
 func (resultDetails *ChaosResultDetails) setTotalDuration() *ChaosResultDetails {
 	resultDetails.TotalDuration = math.Max(0, resultDetails.EndTime-resultDetails.StartTime)
+	return resultDetails
+}
+
+// setRecoveryTime calculates the time from chaos injection to system recovery
+func (resultDetails *ChaosResultDetails) setRecoveryTime() *ChaosResultDetails {
+	// TTR is only meaningful if we have both an injection start and an end summary
+	if resultDetails.InjectionTime > 0 && resultDetails.EndTime > 0 {
+		// Calculation: Summary Timestamp - Injection Timestamp
+		// Note: If your experiments have a "ChaosDone" event, use that instead of InjectionTime for higher accuracy
+		recoveryDuration := resultDetails.EndTime - float64(resultDetails.InjectionTime)
+		resultDetails.RecoveryTime = math.Max(0, recoveryDuration)
+	} else {
+		resultDetails.RecoveryTime = 0
+	}
 	return resultDetails
 }
 

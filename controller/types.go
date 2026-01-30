@@ -62,6 +62,7 @@ type ChaosResultDetails struct {
 	EndTime                float64
 	InjectionTime          int64
 	TotalDuration          float64
+	RecoveryTime           float64
 	ChaosEngineName        string
 	ChaosEngineContext     string
 	Verdict                string
@@ -258,6 +259,15 @@ func (gaugeMetrics *GaugeMetrics) InitializeGaugeMetrics() *GaugeMetrics {
 	},
 		[]string{},
 	)
+
+	gaugeMetrics.ResultRecoveryTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "litmuschaos",
+		Subsystem: "",
+		Name:      "experiment_recovery_time_seconds",
+		Help:      "Time taken for the application to return to a healthy state after chaos injection stops",
+	},
+		[]string{"chaosresult_namespace", "chaosresult_name", "chaosengine_name", "chaosengine_context", "fault_name"},
+	)
 	return gaugeMetrics
 }
 
@@ -271,6 +281,7 @@ type GaugeMetrics struct {
 	ExperimentStartTime                      *prometheus.GaugeVec
 	ExperimentEndTime                        *prometheus.GaugeVec
 	ExperimentTotalDuration                  *prometheus.GaugeVec
+	ResultRecoveryTime                       *prometheus.GaugeVec
 	ExperimentChaosInjectedTime              *prometheus.GaugeVec
 	NamespaceScopedTotalPassedExperiments    *prometheus.GaugeVec
 	NamespaceScopedTotalFailedExperiments    *prometheus.GaugeVec

@@ -103,6 +103,7 @@ func (m *MetricesCollecter) GetLitmusChaosMetrics(clients clients.ClientSets, ov
 			"EndTime":                resultDetails.EndTime,
 			"ChaosInjectTime":        resultDetails.InjectionTime,
 			"TotalDuration":          resultDetails.TotalDuration,
+			"RecoveryTime":           resultDetails.RecoveryTime,
 			"ResultVerdict":          resultDetails.Verdict,
 			"FaultName":              resultDetails.FaultName,
 		})
@@ -174,6 +175,15 @@ func (gaugeMetrics *GaugeMetrics) setResultChaosMetrics(resultDetails ChaosResul
 	gaugeMetrics.ExperimentEndTime.WithLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName).Set(resultDetails.EndTime)
 	gaugeMetrics.ExperimentChaosInjectedTime.WithLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName).Set(float64(resultDetails.InjectionTime))
 	gaugeMetrics.ExperimentTotalDuration.WithLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName).Set(resultDetails.TotalDuration)
+
+	// Keep the "Timing" metrics together: Add TTR here
+	gaugeMetrics.ResultRecoveryTime.WithLabelValues(
+		resultDetails.Namespace,
+		resultDetails.Name,
+		resultDetails.ChaosEngineName,
+		resultDetails.ChaosEngineContext,
+		resultDetails.FaultName,
+	).Set(resultDetails.RecoveryTime)
 }
 
 // unsetResultChaosMetrics unset metrics for the given chaosresult details
@@ -188,6 +198,14 @@ func (gaugeMetrics *GaugeMetrics) unsetResultChaosMetrics(resultDetails *ChaosRe
 	gaugeMetrics.ExperimentEndTime.DeleteLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName)
 	gaugeMetrics.ExperimentChaosInjectedTime.DeleteLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName)
 	gaugeMetrics.ExperimentTotalDuration.DeleteLabelValues(resultDetails.Namespace, resultDetails.Name, resultDetails.ChaosEngineName, resultDetails.ChaosEngineContext, resultDetails.FaultName)
+
+	gaugeMetrics.ResultRecoveryTime.DeleteLabelValues(
+		resultDetails.Namespace,
+		resultDetails.Name,
+		resultDetails.ChaosEngineName,
+		resultDetails.ChaosEngineContext,
+		resultDetails.FaultName,
+	)
 }
 
 // setAwsResultChaosMetrics sets aws metrics for the given chaosresult
@@ -203,6 +221,7 @@ func (awsConfig *AWSConfig) setAwsResultChaosMetrics(resultDetails ChaosResultDe
 	awsConfig.putAwsMetricData(sess, "chaosresult_end_time", "Count", resultDetails.EndTime)
 	awsConfig.putAwsMetricData(sess, "chaosresult_inject_time", "Count", float64(resultDetails.InjectionTime))
 	awsConfig.putAwsMetricData(sess, "chaosresult_total_duration", "Count", resultDetails.TotalDuration)
+	awsConfig.putAwsMetricData(sess, "chaosresult_recovery_time", "Count", resultDetails.RecoveryTime)
 }
 
 // setAwsNamespacedChaosMetrics sets aws metrics for all chaosresults
