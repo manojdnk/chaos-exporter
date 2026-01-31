@@ -87,13 +87,13 @@ func (r *ResultDetails) GetExperimentMetricsFromResult(chaosResult *litmuschaosv
 		setChaosEngineName(chaosResult.Spec.EngineName).
 		setChaosEngineContext(engine.Labels[EngineContext]).
 		setWorkflowName(engine.Labels[WorkFlowName]).
+		setFaultName(engine.Spec.Experiments[0].Name).
 		setAppLabel(engine.Spec.Appinfo.Applabel).
 		setAppNs(engine.Spec.Appinfo.Appns).
 		setAppKind(engine.Spec.Appinfo.AppKind).
 		setTotalDuration().
-		setRecoveryTime().
+		setRecoveryTime(engine, events).
 		setVerdictCount(verdict, chaosResult).
-		setFaultName(engine.Spec.Experiments[0].Name).
 		setResultData()
 
 	// it won't export/override the metrics if chaosengine is in completed state and
@@ -253,16 +253,78 @@ func (resultDetails *ChaosResultDetails) setTotalDuration() *ChaosResultDetails 
 }
 
 // setRecoveryTime calculates the time from chaos injection to system recovery
-func (resultDetails *ChaosResultDetails) setRecoveryTime() *ChaosResultDetails {
-	// TTR is only meaningful if we have both an injection start and an end summary
-	if resultDetails.InjectionTime > 0 && resultDetails.EndTime > 0 {
-		// Calculation: Summary Timestamp - Injection Timestamp
-		// Note: If your experiments have a "ChaosDone" event, use that instead of InjectionTime for higher accuracy
-		recoveryDuration := resultDetails.EndTime - float64(resultDetails.InjectionTime)
-		resultDetails.RecoveryTime = math.Max(0, recoveryDuration)
-	} else {
-		resultDetails.RecoveryTime = 0
+func (resultDetails *ChaosResultDetails) setRecoveryTime(engine *litmuschaosv1alpha1.ChaosEngine, events corev1.EventList) *ChaosResultDetails {
+	// Default to 0
+	resultDetails.RecoveryTime = 0
+
+	// 1. Find Fault Removal Time
+	// We estimate this as InjectionTime + TOTAL_CHAOS_DURATION
+	if resultDetails.InjectionTime == 0 {
+		return resultDetails
 	}
+
+	totalChaosDuration := 0
+	foundDuration := false
+
+	// Find the experiment in the engine
+	var experimentSpec *litmuschaosv1alpha1.ExperimentList
+	// We use the FaultName which should be set
+	targetName := resultDetails.FaultName
+	if targetName == "" && len(engine.Spec.Experiments) > 0 {
+		targetName = engine.Spec.Experiments[0].Name
+	}
+
+	for _, exp := range engine.Spec.Experiments {
+		if exp.Name == targetName {
+			experimentSpec = &exp
+			break
+		}
+	}
+
+	// If experiment found, look for TOTAL_CHAOS_DURATION
+	if experimentSpec != nil {
+		for _, env := range experimentSpec.Spec.Components.ENV {
+			if env.Name == "TOTAL_CHAOS_DURATION" {
+				val, err := strconv.Atoi(env.Value)
+				if err == nil {
+					totalChaosDuration = val
+					foundDuration = true
+				}
+				break
+			}
+		}
+	}
+
+	// 2. Calculate TTR
+	if foundDuration {
+		faultRemovalTime := float64(resultDetails.InjectionTime) + float64(totalChaosDuration)
+
+		// Find Probe Passed Time (First "ProbeSuccess" after fault removal)
+		minSuccessTime := float64(0)
+
+		for _, event := range events.Items {
+			if event.Reason == "ProbeSuccess" || (strings.Contains(event.Message, "Probe") && strings.Contains(event.Message, "passed")) {
+				eventTime := float64(event.LastTimestamp.Unix())
+				if eventTime >= faultRemovalTime {
+					if minSuccessTime == 0 || eventTime < minSuccessTime {
+						minSuccessTime = eventTime
+					}
+				}
+			}
+		}
+
+		probePassedTime := minSuccessTime
+		if probePassedTime > 0 {
+			resultDetails.RecoveryTime = math.Max(0, probePassedTime-faultRemovalTime)
+		}
+	} else {
+		// Fallback to old calculation if Duration not found (backward compatibility)
+		if resultDetails.EndTime > 0 {
+			recoveryDuration := resultDetails.EndTime - float64(resultDetails.InjectionTime)
+			resultDetails.RecoveryTime = math.Max(0, recoveryDuration)
+		}
+	}
+
 	return resultDetails
 }
 
